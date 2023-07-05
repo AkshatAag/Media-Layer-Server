@@ -1,6 +1,8 @@
 package org.example;
 
 public class Utils {
-    public static final String API_URL = "http://localhost:17535/controller/mediaLayer";
-    public static final String FILE_PATH = "/Users/akshat.agrawal/Desktop/interval_5min/test.txt";
+    public static final String BASE_URL_1 = "http://localhost:8080/controller";
+    public static final String BASE_URL_2 = "http://localhost:8081/controller";
+    public static final int DURATION_SEND_CALLS = 1 * 30 * 1000;
+    public static int COUNTER = 0;
 }

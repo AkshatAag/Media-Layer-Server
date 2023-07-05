@@ -1,62 +1,106 @@
 package org.example;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.example.Utils.*;
 
 public class Main {
-    public static void main(String[] args) throws IOException {
-        processEventsFromFile(FILE_PATH);
+
+    public static void main(String[] args) {
+        ExecutorService executorService = Executors.newFixedThreadPool(100);
+        List<String> legIds = new ArrayList<>();
+        executorService.submit(() -> generateCalls(legIds));
+        executorService.submit(() -> generateCalls(legIds));
+        executorService.submit(() -> generateCalls(legIds));
+        executorService.submit(() -> generateCalls(legIds));
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        executorService.submit(() -> hangupCalls(legIds));
+        executorService.submit(() -> hangupCalls(legIds));
     }
 
-    private static void processEventsFromFile(String filePath) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                // Process the line
-                if (line.trim().isEmpty()) return;
-                if (line.startsWith("Event-Name:")) {
-                    String requestBody = "";
-                    LocalDateTime eventTimeStamp = null;
-                    while (!line.trim().isEmpty()) {
-                        String[] parts = line.split(":", 2);
-                        if (parts.length == 2) {
-                            String key = parts[0].trim();
-                            String value = parts[1].trim();
-
-                            if (key.equals("Event-Date-Local")) {
-                                eventTimeStamp = LocalDateTime.parse(value, DateTimeFormatter.ISO_DATE_TIME);
-                            }
-
-                            // Append the key-value pair to the request body
-                            requestBody += "\"" + key + "\": \"" + value + "\",";
-                        }
-                        if ((line = reader.readLine()) == null) break;
-                    }
-                    if (eventTimeStamp != null) {
-                        // Remove the trailing comma from the request body
-                        requestBody = requestBody.substring(0, requestBody.length() - 1);
-                        requestBody = "{" + requestBody + "}";
-
-
-                        try {
-                            sendPostRequest(API_URL, requestBody);
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
+    private static void hangupCalls(List<String> legIds) {
+        Random random = new Random();
+        int maxSize;
+        long endTime = System.currentTimeMillis() + DURATION_SEND_CALLS + 60 * 1000;
+        while (System.currentTimeMillis() < endTime) {
+            maxSize = legIds.size();
+            if (maxSize == 0) {
+                try {
+                    Thread.sleep(1);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
                 }
+                continue;
             }
-        } catch (IOException e) {
-            e.printStackTrace();
+            int idx = random.nextInt(maxSize);
+            String legId = legIds.get(idx);
+            legIds.remove(idx);
+            String requestBody = getHangupRequest(legId);
+            String uri;
+            if (random.nextInt(1000) < 500) {//hit baseurl1
+                uri = BASE_URL_1 + "/new_event";
+            } else {// hit base url 2
+                uri = BASE_URL_2 + "/new_event";
+            }
+            try {
+                System.out.println("send hangup call");
+                System.out.println(requestBody);
+                sendRequest(uri, requestBody);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 
-    private static void sendPostRequest(String url, String requestBody) throws IOException {
+    private static String getHangupRequest(String legId) {
+        return "{\n" + "\"Event-Name\":\"" + "CHANNEL_HANGUP" + "\",\n" + "\"Core-UUID\":\"" + legId + "\"\n" + "}";
+    }
+
+    private static void generateCalls(List<String> legIds) {
+        Random random = new Random();
+        long endTime = System.currentTimeMillis() + DURATION_SEND_CALLS;
+        while (System.currentTimeMillis() < endTime) {
+            String legId = String.valueOf(random.nextInt(100000) + 1);
+            String conversationId = String.valueOf(random.nextInt(100) + 1);
+            String requestBody = getGenerateRequest(legId, conversationId);
+
+            legIds.add(legId);
+            String uri;
+            if (random.nextInt(1000) < 500) {//hit baseurl1
+                uri = BASE_URL_1 + "/control_layer/1";
+            } else {// hit base url 2
+                uri = BASE_URL_2 + "/control_layer/1";
+            }
+            try {
+                System.out.println("send generate call");
+                System.out.println(requestBody);
+                sendRequest(uri, requestBody);
+            } catch (Exception e) {
+                System.out.println(e.getMessage());
+            }
+        }
+    }
+
+    private static String getGenerateRequest(String legId, String conversationId) {
+        return "{\n" + "    \"legId\":\"" + legId + "\",\n" + "    \"conversationId\":\"" + conversationId + "\"\n" + "}";
+    }
+
+    private static void sendRequest(String url, String requestBody) throws IOException {
+        COUNTER++;
         URL apiUrl = new URL(url);
         HttpURLConnection connection = (HttpURLConnection) apiUrl.openConnection();
         connection.setRequestMethod("POST");
@@ -79,7 +123,7 @@ public class Main {
             }
         }
 
-        System.out.println("Response: " + response.toString());
+        System.out.println("Response: " + response.toString() + "  counter : " + COUNTER);
 
         connection.disconnect();
     }
