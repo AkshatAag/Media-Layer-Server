@@ -16,39 +16,53 @@ import static org.example.Utils.*;
 
 public class Main {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException, InterruptedException {
+
+        sendRequest("http://localhost:8081/controller/add_new_layer", "{\n" + "\"layerNumber\":\"1\"\n" + "}");
+        sendRequest("http://localhost:8081/controller/add_new_layer", "{\n" + "\"layerNumber\":\"2\"\n" + "}");
+        sendRequest("http://localhost:8080/controller/add_new_layer", "{\n" + "\"layerNumber\":\"3\"\n" + "}");
+        sendRequest("http://localhost:8080/controller/add_new_layer", "{\n" + "\"layerNumber\":\"4\"\n" + "}");
+
+        Thread.sleep(1000);
+
         ExecutorService executorService = Executors.newFixedThreadPool(100);
         List<String> legIds = new ArrayList<>();
         executorService.submit(() -> generateCalls(legIds));
         executorService.submit(() -> generateCalls(legIds));
         executorService.submit(() -> generateCalls(legIds));
         executorService.submit(() -> generateCalls(legIds));
-        try {
-            Thread.sleep(10000);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-        executorService.submit(() -> hangupCalls(legIds));
-        executorService.submit(() -> hangupCalls(legIds));
+        executorService.submit(() -> generateCalls(legIds));
+
+        Thread.sleep(35000);
+
+        executorService.submit(() -> hangupCalls(legIds, 60 * 1000));
+        executorService.submit(() -> hangupCalls(legIds, 60 * 1000));
+        executorService.submit(() -> hangupCalls(legIds, 60 * 1000));
+        executorService.submit(() -> hangupCalls(legIds, 60 * 1000));
+        executorService.submit(() -> hangupCalls(legIds, 60 * 1000));
     }
 
-    private static void hangupCalls(List<String> legIds) {
+    private static void hangupCalls(List<String> legIds, long i) {
         Random random = new Random();
         int maxSize;
-        long endTime = System.currentTimeMillis() + DURATION_SEND_CALLS + 60 * 1000;
+        long endTime = System.currentTimeMillis() + i;
+        Object lock = new Object();
         while (System.currentTimeMillis() < endTime) {
-            maxSize = legIds.size();
-            if (maxSize == 0) {
-                try {
-                    Thread.sleep(1);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
+            String legId;
+            synchronized (lock) {
+                maxSize = legIds.size();
+                if (maxSize == 0) {
+                    try {
+                        Thread.sleep(1);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    continue;
                 }
-                continue;
+                int idx = random.nextInt(maxSize);
+                legId = legIds.get(idx);
+                legIds.remove(idx);
             }
-            int idx = random.nextInt(maxSize);
-            String legId = legIds.get(idx);
-            legIds.remove(idx);
             String requestBody = getHangupRequest(legId);
             String uri;
             if (random.nextInt(1000) < 500) {//hit baseurl1
@@ -72,9 +86,8 @@ public class Main {
 
     private static void generateCalls(List<String> legIds) {
         Random random = new Random();
-        long endTime = System.currentTimeMillis() + DURATION_SEND_CALLS;
-        while (System.currentTimeMillis() < endTime) {
-            String legId = String.valueOf(random.nextInt(100000) + 1);
+        for (int i = 0; i < 30; i++) {
+            String legId = String.valueOf(random.nextInt(100000000) + 1);
             String conversationId = String.valueOf(random.nextInt(100) + 1);
             String requestBody = getGenerateRequest(legId, conversationId);
 
@@ -100,7 +113,6 @@ public class Main {
     }
 
     private static void sendRequest(String url, String requestBody) throws IOException {
-        COUNTER++;
         URL apiUrl = new URL(url);
         HttpURLConnection connection = (HttpURLConnection) apiUrl.openConnection();
         connection.setRequestMethod("POST");
