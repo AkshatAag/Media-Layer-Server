@@ -6,11 +6,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Random;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import static org.example.Utils.*;
 
@@ -26,7 +26,9 @@ public class Main {
         Thread.sleep(1000);
 
         ExecutorService executorService = Executors.newFixedThreadPool(100);
-        List<String> legIds = new ArrayList<>();
+//        List<String> legIds = new ArrayList<>();
+        BlockingQueue<String> legIds = new LinkedBlockingQueue<>();
+
         executorService.submit(() -> generateCalls(legIds));
         executorService.submit(() -> generateCalls(legIds));
         executorService.submit(() -> generateCalls(legIds));
@@ -42,26 +44,26 @@ public class Main {
         executorService.submit(() -> hangupCalls(legIds, 60 * 1000));
     }
 
-    private static void hangupCalls(List<String> legIds, long i) {
+    private static void hangupCalls(BlockingQueue<String> legIds, long i) {
         Random random = new Random();
         int maxSize;
         long endTime = System.currentTimeMillis() + i;
         Object lock = new Object();
         while (System.currentTimeMillis() < endTime) {
             String legId;
-            synchronized (lock) {
-                maxSize = legIds.size();
-                if (maxSize == 0) {
-                    try {
-                        Thread.sleep(1);
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
-                    continue;
+            maxSize = legIds.size();
+            if (maxSize == 0) {
+                try {
+                    Thread.sleep(1);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
                 }
-                int idx = random.nextInt(maxSize);
-                legId = legIds.get(idx);
-                legIds.remove(idx);
+                continue;
+            }
+            try {
+                legId = legIds.take();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
             String requestBody = getHangupRequest(legId);
             String uri;
@@ -84,7 +86,7 @@ public class Main {
         return "{\n" + "\"Event-Name\":\"" + "CHANNEL_HANGUP" + "\",\n" + "\"Core-UUID\":\"" + legId + "\"\n" + "}";
     }
 
-    private static void generateCalls(List<String> legIds) {
+    private static void generateCalls(BlockingQueue<String> legIds) {
         Random random = new Random();
         for (int i = 0; i < 30; i++) {
             String legId = String.valueOf(random.nextInt(100000000) + 1);
